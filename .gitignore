@@ -63,39 +63,71 @@ def brtot_cartesian(i, a, x, y, z):
     bzcar = br * z / r               
 
     return bxcar, bycar, bzcar
-import numpy as np
-import matplotlib.pyplot as plt
-
+plt.rc('text', usetex=True)
+plt.rc('font', family='times new roman')
 # Constants
-i = 6.8   # Current in Amps
-a = 0.025  # Loop radius in meters (25 mm)
+i = 6.8  
+a = 0.025 
+circle_radius = 18.5e-3 
 
-# Create grid for y and z values (since we are considering the zy-plane)
-y_vals = np.linspace(-0.030, 0.030, 100)  # y range from -30 to 30
-z_vals = np.linspace(-0.030, 0.030, 100)  # z range from -30 to 30
+# Create grid for x and y values (since we are considering the xy-plane)
+x_vals = np.linspace(-0.05, 0.05, 100)  
+y_vals = np.linspace(-0.05, 0.05, 100)  
 
-# Create meshgrid for the coordinates (we set x = 0 for the zy-plane)
-Y, Z = np.meshgrid(y_vals, z_vals)
+# Create grid for z values (for YZ-plane, we will consider z)
+z_vals = np.linspace(-0.05, 0.05, 100)  
 
-# Calculate the radial distance from the origin
-r_vals = np.sqrt(Y**2 + Z**2)
+# Create meshgrid for the coordinates (we set z = 0 for the xy-plane)
+X, Y = np.meshgrid(x_vals, y_vals)
 
-# Compute the magnetic field components in Cartesian coordinates in the zy-plane
-BX, BY, BZ = np.vectorize(brtot_cartesian)(i, a, 0, Y, Z)
+# Create meshgrid for YZ-plane (consider X = 0)
+Y_grid, Z_grid = np.meshgrid(y_vals, z_vals)
 
-# Calculate the magnetic field magnitude
-B_mag = np.sqrt(BX**2 + BY**2 + BZ**2)
+# Compute the magnetic field components in Cartesian coordinates in the xy-plane
+BX, BY, BZ = np.vectorize(brtot_cartesian)(i, a, X, Y, 0)
 
-# Create 2D plot for the density map in the zy-plane
-fig, ax = plt.subplots(figsize=(8, 6))
+# Compute the magnetic field components for the YZ-plane (consider X = 0)
+BX_yz, BY_yz, BZ_yz = np.vectorize(brtot_cartesian)(i, a, 0.002, Y_grid, Z_grid)
 
-# Plot the density map for the magnetic field magnitude
-c = ax.pcolormesh(Y, Z, B_mag, cmap='viridis', shading='auto')
-fig.colorbar(c, ax=ax, label='Magnetic Field Strength (T)')
-strm = ax.streamplot(Y, Z, BY, BZ, color=np.sqrt(BX**2 + BY**2), linewidth=1, cmap='viridis')
-# Add labels and title
-ax.set_xlabel('Y (mm)')
-ax.set_ylabel('Z (mm)')
-ax.set_title('Magnetic Field Density Map in the ZY Plane')
+# Calculate the magnetic field magnitude for both planes
+B_mag_xy = np.sqrt(BX**2 + BY**2 + BZ**2)
+B_mag_yz = np.sqrt(BX_yz**2 + BY_yz**2 + BZ_yz**2)
 
+# Clip the magnetic field magnitudes to a maximum value of 30 for both planes
+B_mag_xy = np.clip(B_mag_xy, None, 31)
+B_mag_yz = np.clip(B_mag_yz, None, 31)
+
+# Create subplots for XY-plane and YZ-plane
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+plt.rc('text', usetex=True)
+plt.rc('font', family='times new roman')
+# XY-plane density map and streamplot
+c1 = ax1.contourf(X*10**3, Y*10**3, B_mag_xy, cmap='viridis', shading='auto')
+strm1 = ax1.streamplot(X*10**3, Y*10**3, BX, BY, color='r', linewidth=1)
+ax1.set_xlabel('Y (mm)',fontsize=24)
+ax1.set_ylabel('X (mm)',fontsize=24)
+ax1.set_title('(a)',fontsize=24)
+
+# Add circle to XY-plane (18.5 mm radius) at the center (0, 0)
+circle1 = plt.Circle((0, 0), circle_radius*10**3, color='blue', fill=False, linewidth=2)
+ax1.add_artist(circle1)
+
+# YZ-plane density map and streamplot
+c2 = ax2.contourf(Y_grid*10**3, Z_grid*10**3, B_mag_yz, cmap='viridis', shading='auto',fontsize=24)
+# fig.colorbar(c2, ax=ax2, label='Magnetic Field Strength (G)',ticks=np.arange(0, 32, 5))
+strm2 = ax2.streamplot(Y_grid*10**3, Z_grid*10**3, BY_yz, BZ_yz, color='r', linewidth=1)
+ax2.set_xlabel('X (mm)',fontsize=24)
+ax2.set_ylabel('Z (mm)',fontsize=24)
+ax2.set_title('(b)',fontsize=24)
+ax1.tick_params(axis='both', which='major', labelsize=20)
+ax2.tick_params(axis='both', which='major', labelsize=20)
+# Add circle to YZ-plane (18.5 mm radius) at the center (0, 0)
+circle2 = plt.Circle((0, 0), circle_radius*10**3, color='blue', fill=False, linewidth=2)
+ax2.add_artist(circle2)
+fig.colorbar(c1, ax=ax1, label='Magnetic Field Strength (G)', ticks=np.arange(0, 32, 5)).ax.tick_params(labelsize=18)
+fig.colorbar(c2, ax=ax2, label='Magnetic Field Strength (G)', ticks=np.arange(0, 32, 5)).ax.tick_params(labelsize=18)
+
+# Show the plots
+plt.tight_layout()
 plt.show()
+
