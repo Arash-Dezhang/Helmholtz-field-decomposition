@@ -1,207 +1,101 @@
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[codz]
-*$py.class
+%matplotlib inline
+from scipy.special import ellipk, ellipe, ellipkm1
+from numpy import pi, sqrt, linspace
+from pylab import plot, xlabel, ylabel, suptitle, legend, show
+import numpy as np
+n=10
+d=12.5*10**-3
+uo =n* 4E-3*pi     # Permeability constant - units of H/m
+Bo = lambda i, a, u=uo: i*u/2./a    # Central field = f(current, loop radius, perm. constant)
+al = lambda r, a: r/a               # Alpha = f(radius of measurement point, radius of loop)
+be = lambda x, a: x/a               # Beta = f(axial distance to meas. point, radius of loop)
+ga = lambda x, r: x/r               # Gamma = f(axial distance, radius to meas. point)
+Q = lambda r, x, a: (1 + al(r,a))**2 + be(x,a)**2   # Q = f(radius, distance to meas. point, loop radius)
+k = lambda r, x, a: sqrt(4*al(r,a)/Q(r,x,a))       # k = f(radius, distance to meas. point, loop radius)
+K = lambda k: ellipk(k**2.0)          # Elliptic integral, first kind, as a function of k
+E = lambda k: ellipe(k**2.0)          # Elliptic integral, second kind, as a function of k
+# On-Axis field = f(current and radius of loop, x of measurement point)
+def Baxial(i, a, x, u=uo):
+    if a == 0:
+        if x == 0:
+            return NaN
+        else:
+            return 0.0
+    else:
+        return (u*i*a**2)/2.0/(a**2 + x**2)**(1.5)
 
-# C extensions
-*.so
+# Axial field component = f(current and radius of loop, r and x of meas. point)
+def Bx(i, a, x, r):
+    if r == 0:
+        if x == 0:
+            return Bo(i,a)         
+        else:
+            return Baxial(i,a,x)   
+    else:                         
+        return Bo(i,a)*\
+            (E(k(r,x,a))*((1.0-al(r,a)**2-be(x,a)**2)/(Q(r,x,a)-4*al(r,a))) + K(k(r,x,a)))\
+            /pi/sqrt(Q(r,x,a))
+        
+# Radial field component = f(current and radius of loop, r and x of meas. point)
+def Br(i, a, x, r):
+    if r == 0:
+        return 0                  
+    else:                          
+        return Bo(i,a)*ga(x,r)*\
+            (E(k(r,x,a))*((1.0+al(r,a)**2+be(x,a)**2)/(Q(r,x,a)-4*al(r,a))) - K(k(r,x,a)))\
+            /pi/sqrt(Q(r,x,a))
+def btotax(i,a,x,u=uo):
+    return Baxial(i, a, x-a/2, u=uo)+Baxial(i, a, x+a/2, u=uo)
+def btotx(i, a, x, r):
+    return Bx(i, a, x-a/2, r)+Bx(i, a, x+a/2, r)
+def brtot(i, a, x, r):
+    return Br(i, a, x-a/2, r)+Br(i, a, x+a/2, r)
+def brtot_cartesian(i, a, x, y, z):
+    r = np.sqrt(x**2 + y**2 + z**2)  
+    
+    # Calculate the radial and axial field components
+    br = brtot(i, a, x, r)   
+    bx = btotx(i, a, x, r)  
 
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
+    # Convert to Cartesian coordinates using x, y, and r
+    bxcar = bx       
+    bycar = br * y / r       
+    bzcar = br * z / r               
 
-# PyInstaller
-#  Usually these files are written by a python script from a template
-#  before PyInstaller builds the exe, so as to inject date/other infos into it.
-*.manifest
-*.spec
+    return bxcar, bycar, bzcar
+import numpy as np
+import matplotlib.pyplot as plt
 
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
+# Constants
+i = 6.8   # Current in Amps
+a = 0.025  # Loop radius in meters (25 mm)
 
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.py.cover
-.hypothesis/
-.pytest_cache/
-cover/
+# Create grid for y and z values (since we are considering the zy-plane)
+y_vals = np.linspace(-0.030, 0.030, 100)  # y range from -30 to 30
+z_vals = np.linspace(-0.030, 0.030, 100)  # z range from -30 to 30
 
-# Translations
-*.mo
-*.pot
+# Create meshgrid for the coordinates (we set x = 0 for the zy-plane)
+Y, Z = np.meshgrid(y_vals, z_vals)
 
-# Django stuff:
-*.log
-local_settings.py
-db.sqlite3
-db.sqlite3-journal
+# Calculate the radial distance from the origin
+r_vals = np.sqrt(Y**2 + Z**2)
 
-# Flask stuff:
-instance/
-.webassets-cache
+# Compute the magnetic field components in Cartesian coordinates in the zy-plane
+BX, BY, BZ = np.vectorize(brtot_cartesian)(i, a, 0, Y, Z)
 
-# Scrapy stuff:
-.scrapy
+# Calculate the magnetic field magnitude
+B_mag = np.sqrt(BX**2 + BY**2 + BZ**2)
 
-# Sphinx documentation
-docs/_build/
+# Create 2D plot for the density map in the zy-plane
+fig, ax = plt.subplots(figsize=(8, 6))
 
-# PyBuilder
-.pybuilder/
-target/
+# Plot the density map for the magnetic field magnitude
+c = ax.pcolormesh(Y, Z, B_mag, cmap='viridis', shading='auto')
+fig.colorbar(c, ax=ax, label='Magnetic Field Strength (T)')
+strm = ax.streamplot(Y, Z, BY, BZ, color=np.sqrt(BX**2 + BY**2), linewidth=1, cmap='viridis')
+# Add labels and title
+ax.set_xlabel('Y (mm)')
+ax.set_ylabel('Z (mm)')
+ax.set_title('Magnetic Field Density Map in the ZY Plane')
 
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# IPython
-profile_default/
-ipython_config.py
-
-# pyenv
-#   For a library or package, you might want to ignore these files since the code is
-#   intended to run in multiple environments; otherwise, check them in:
-# .python-version
-
-# pipenv
-#   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
-#   However, in case of collaboration, if having platform-specific dependencies or dependencies
-#   having no cross-platform support, pipenv may install dependencies that don't work, or not
-#   install all needed dependencies.
-#Pipfile.lock
-
-# UV
-#   Similar to Pipfile.lock, it is generally recommended to include uv.lock in version control.
-#   This is especially recommended for binary packages to ensure reproducibility, and is more
-#   commonly ignored for libraries.
-#uv.lock
-
-# poetry
-#   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.
-#   This is especially recommended for binary packages to ensure reproducibility, and is more
-#   commonly ignored for libraries.
-#   https://python-poetry.org/docs/basic-usage/#commit-your-poetrylock-file-to-version-control
-#poetry.lock
-#poetry.toml
-
-# pdm
-#   Similar to Pipfile.lock, it is generally recommended to include pdm.lock in version control.
-#   pdm recommends including project-wide configuration in pdm.toml, but excluding .pdm-python.
-#   https://pdm-project.org/en/latest/usage/project/#working-with-version-control
-#pdm.lock
-#pdm.toml
-.pdm-python
-.pdm-build/
-
-# pixi
-#   Similar to Pipfile.lock, it is generally recommended to include pixi.lock in version control.
-#pixi.lock
-#   Pixi creates a virtual environment in the .pixi directory, just like venv module creates one
-#   in the .venv directory. It is recommended not to include this directory in version control.
-.pixi
-
-# PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
-__pypackages__/
-
-# Celery stuff
-celerybeat-schedule
-celerybeat.pid
-
-# SageMath parsed files
-*.sage.py
-
-# Environments
-.env
-.envrc
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
-
-# Spyder project settings
-.spyderproject
-.spyproject
-
-# Rope project settings
-.ropeproject
-
-# mkdocs documentation
-/site
-
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
-
-# Pyre type checker
-.pyre/
-
-# pytype static type analyzer
-.pytype/
-
-# Cython debug symbols
-cython_debug/
-
-# PyCharm
-#  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
-#  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
-#  and can be added to the global gitignore or merged into this file.  For a more nuclear
-#  option (not recommended) you can uncomment the following to ignore the entire idea folder.
-#.idea/
-
-# Abstra
-# Abstra is an AI-powered process automation framework.
-# Ignore directories containing user credentials, local state, and settings.
-# Learn more at https://abstra.io/docs
-.abstra/
-
-# Visual Studio Code
-#  Visual Studio Code specific template is maintained in a separate VisualStudioCode.gitignore 
-#  that can be found at https://github.com/github/gitignore/blob/main/Global/VisualStudioCode.gitignore
-#  and can be added to the global gitignore or merged into this file. However, if you prefer, 
-#  you could uncomment the following to ignore the entire vscode folder
-# .vscode/
-
-# Ruff stuff:
-.ruff_cache/
-
-# PyPI configuration file
-.pypirc
-
-# Cursor
-#  Cursor is an AI-powered code editor. `.cursorignore` specifies files/directories to
-#  exclude from AI features like autocomplete and code analysis. Recommended for sensitive data
-#  refer to https://docs.cursor.com/context/ignore-files
-.cursorignore
-.cursorindexingignore
-
-# Marimo
-marimo/_static/
-marimo/_lsp/
-__marimo__/
+plt.show()
